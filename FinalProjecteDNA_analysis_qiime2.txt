@@ -1,0 +1,147 @@
+srun --time=01:00:00 --mem=7G --ntasks=4 --cpus-per-task=1 --pty bash 
+
+# load the module on Grace
+module load QIIME2/2024.10-Amplicon
+
+# Script for processing Illumina MiSeq samples from Jeunen et al. 2018. 
+# The samples processed are the single-end eukaryote COI samples.
+
+#Import sequence data that has already been demultiplexd. 
+qiime tools import \
+  --type 'SampleData[PairedEndSequencesWithQuality]' \
+  --input-path ../../project/test/manifest_file.tsv \
+  --output-path paired-end-demux.qza \
+  --input-format PairedEndFastqManifestPhred33V2
+
+# Import the 16S database which is from NCBI
+
+# Import the taxonomy table that is associated with the above database
+
+# Visualizing the sequences. 
+qiime demux summarize \
+--i-data ./paired-end-demux.qza \
+--o-visualization ./paired-end-demux.qzv
+
+# Using the cutadapt module in Qiime2 to pre-trim the sequences (will have to change depending on the primer (CO1 or 18S)
+qiime cutadapt trim-paired \
+--i-demultiplexed-sequences ./paired-end-demux.qza \
+--p-cores 4 \
+--p-front-f AMCVGGATTAGATACCCBG \
+--p-front-r ACGTCATCCCCACCTTCC \
+--p-error-rate 0.1 \
+--p-match-adapter-wildcards \
+--p-match-read-wildcards \
+--o-trimmed-sequences trimmed.qza 
+
+# Using DADA2 to trim sequences and make outputs
+qiime dada2 denoise-paired \
+--i-demultiplexed-seqs trimmed.qza \
+--o-representative-sequences rep-seq.qza \
+--o-denoising-stats denoising-stats.qza \
+--p-trunc-len-f 0 \
+--p-trunc-len-r 0 \
+--p-n-threads 4 \
+--o-table table.qza 
+
+# Visualizing the output of ASV assignment prior to moving on. 
+# Here, we'll see there are some sequences that dominate the data, which we will remove in the next steps.
+qiime feature-table summarize \
+  --i-table table.qza \
+  --o-visualization table.qzv
+
+qiime feature-table tabulate-seqs \
+  --i-data rep-seq.qza \
+  --o-visualization rep-seq.qzv
+
+qiime metadata tabulate \ls 
+  --m-input-file denoising-stats.qza \
+  --o-visualization denoising-stats.qzv
+
+# Taxonomy assignment of the features
+qiime vsearch cluster-features-closed-reference --i-sequences rep-seq.qza \
+--i-table table.qza --i-reference-sequences silva-138-99-seqs.qza --p-perc-identity .97 \
+--o-clustered-table closed-97_clustered-table --o-clustered-sequences closed-97_clustered-seq \
+--o-unmatched-sequences closed-97_unmatched-seq
+
+#Visulalize relative abundance of different taxa (including contaminants)
+qiime taxa barplot \
+  --i-table closed-97_clustered-table.qza \
+  --i-taxonomy silva-138-99-tax.qza \
+  --o-visualization taxa-barplot.qzv
+### No plastid-derived sequences
+
+# Filtering the data
+# We will perform multiple filtering steps. 
+# A) Filter out abundant plastids
+qiime taxa filter-table --i-table closed-97_clustered-table.qza --i-taxonomy silva-138-99-tax.qza \
+--p-exclude mitochondria,chloroplast \
+--o-filtered-table table-filtered-no-plastid.qza
+
+# B) We want to filter samples that don't meet our read count criteria. 
+qiime feature-table filter-samples --i-table table-filtered-no-plastid.qza \
+--p-min-frequency 250 --o-filtered-table table-filtered-no-plastid_2.qza
+
+# C) We want to remove low abundance filters. We will run parameters to filter out singletons, but depending on your questions, 
+#    you may choose to remove at greater frequencies.
+qiime feature-table filter-features \
+  --i-table table-filtered-no-plastid_2.qza \
+  --p-min-frequency 2 \
+  --o-filtered-table table-filtered-no-plastid_3.qza
+
+#Remove low prevalence ASVs that occur in <10% of samples
+#This assumes you have at least 20 samples, where 10% = 2. If you have fewer (e.g., 10), use --p-min-samples 1
+qiime feature-table filter-features \
+  --i-table table-filtered-no-plastid_3.qza \
+  --p-min-samples 1 \
+  --o-filtered-table table-filtered-10percent_4.qza
+
+### Remove Turtle DNA
+qiime taxa filter-table \
+  --i-table table-filtered-10percent_4.qza \
+  --i-taxonomy silva-138-99-tax.qza \
+  --p-exclude Chelonia \
+  --o-filtered-table table-filtered-10percent-no-chelonia_5.qza
+ 
+# Diversity analysis
+# Back to the actual file creation! Making a taxonomic tree of samples using mafft.
+qiime phylogeny align-to-tree-mafft-fasttree \
+  --i-sequences closed-97_clustered-seq.qza \
+  --o-alignment aligned-seqs.qza \
+  --o-masked-alignment aligned-seqs.masked.qza \
+  --o-tree unrooted-tree.qza \
+  --o-rooted-tree rooted-tree.qza
+
+# Now making a summary of core taxon. 
+qiime diversity core-metrics-phylogenetic \
+  --p-sampling-depth 250 \
+  --i-phylogeny rooted-tree.qza \
+  --i-table table-filtered-10percent-no-chelonia_5.qza \
+  --m-metadata-file eDNA_metadata2.txt \
+  --output-dir core-metrics-results2
+
+# rarefaction curve
+qiime diversity alpha-rarefaction \
+  --i-table table-filtered-10percent-no-chelonia_5.qza \
+  --i-phylogeny rooted-tree.qza \
+  --p-max-depth 250 \
+  --m-metadata-file metadata2.tsv \
+  --o-visualization alpha-rarefaction.qzv
+
+# export data for phyloseq
+# unzip the table file
+unzip table-filtered-10percent-no-chelonia_5.qza
+
+# move into the directory that is generated
+cd [extracted folder]/data/
+# run the command below
+biom convert -i feature-table.biom -o feature-table.txt --to-tsv 
+
+# copy data up multiple directories
+cp feature-table.* ../../
+
+# move back up two directories and repeat the process for the tree data
+cd ../../
+unzip rooted-tree.qza
+
+cd [extracted folder]/data/
+cp tree.nwk ../../
