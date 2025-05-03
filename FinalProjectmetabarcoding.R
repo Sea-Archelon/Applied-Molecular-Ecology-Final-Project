@@ -111,6 +111,7 @@ library(plotly)
 
 SpeciesFullPlot <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = SpeciesFull)) +
   geom_bar(stat = "identity") +
+  facet_wrap(~Description, scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = -90, size = 6),
@@ -134,6 +135,7 @@ names(genus_colors) <- genus_list
 
 GenusPlot <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = Genus)) +
   geom_bar(stat = "identity") +
+  facet_wrap(~Description, scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = -90, size = 6, color = "black"),
@@ -161,6 +163,7 @@ names(family_colors) <- family_list
 
 FamilyPlot <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = Family)) +
   geom_bar(stat = "identity") +
+  facet_wrap(~Description, scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = -90, size = 6, color = "black"),
@@ -187,6 +190,7 @@ names(order_colors) <- order_list
 
 OrderPlot <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = Order)) +
   geom_bar(stat = "identity") +
+  facet_wrap(~Description, scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = -90, size = 6, color = "black"),
@@ -230,6 +234,7 @@ ClassPlot <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = Class)) +
 
 plot(ClassPlot)
 ggplotly(ClassPlot)
+
 ###Top10
 top_species <- names(
   sort(tapply(mdf_prep$Abundance, mdf_prep$SpeciesFull, sum), decreasing = TRUE)[1:10]
@@ -250,6 +255,7 @@ names(species_colors10) <- species_list10
 
 SpeciesFullPlot10 <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = SpeciesTop10)) +
   geom_bar(stat = "identity") +
+  facet_wrap(~Description, scales = "free_x") +
   theme_classic() +
   theme(
     axis.text.x = element_text(angle = -90, size = 6, color = "black"),
@@ -265,3 +271,4 @@ SpeciesFullPlot10 <- ggplot(mdf_prep, aes(x = Sample, y = Abundance, fill = Spec
   scale_fill_manual(values = species_colors10)
 
 plot(SpeciesFullPlot10)
+ggplotly((SpeciesFullPlot10))
